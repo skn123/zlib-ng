@@ -10,19 +10,17 @@
 #  define _WIN32
 #endif
 
-#ifdef __STDC_VERSION__
-#  if __STDC_VERSION__ >= 199901L
-#    ifndef STDC99
-#      define STDC99
-#    endif
-#  endif
-#endif
-
 /* Clang macro for detecting declspec support
  * https://clang.llvm.org/docs/LanguageExtensions.html#has-declspec-attribute
  */
 #ifndef __has_declspec_attribute
 #  define __has_declspec_attribute(x) 0
+#endif
+
+#if defined(ZLIB_CONST) && !defined(z_const)
+#  define z_const const
+#else
+#  define z_const
 #endif
 
 /* Maximum value for memLevel in deflateInit2 */
@@ -59,14 +57,18 @@
 #  define OF(args)  args
 #endif
 
+#ifdef ZLIB_INTERNAL
+#  define Z_INTERNAL ZLIB_INTERNAL
+#endif
+
 /* If building or using zlib as a DLL, define ZLIB_DLL.
  * This is not mandatory, but it offers a little performance increase.
  */
 #if defined(ZLIB_DLL) && (defined(_WIN32) || (__has_declspec_attribute(dllexport) && __has_declspec_attribute(dllimport)))
-#  ifdef ZLIB_INTERNAL
-#    define ZEXTERN extern __declspec(dllexport)
+#  ifdef Z_INTERNAL
+#    define Z_EXTERN extern __declspec(dllexport)
 #  else
-#    define ZEXTERN extern __declspec(dllimport)
+#    define Z_EXTERN extern __declspec(dllimport)
 #  endif
 #endif
 
@@ -78,18 +80,30 @@
 #  include <windows.h>
    /* No need for _export, use ZLIB.DEF instead. */
    /* For complete Windows compatibility, use WINAPI, not __stdcall. */
-#  define ZEXPORT WINAPI
-#  define ZEXPORTVA WINAPIV
+#  define Z_EXPORT WINAPI
+#  define Z_EXPORTVA WINAPIV
 #endif
 
+#ifndef Z_EXTERN
+#  define Z_EXTERN extern
+#endif
+#ifndef Z_EXPORT
+#  define Z_EXPORT
+#endif
+#ifndef Z_EXPORTVA
+#  define Z_EXPORTVA
+#endif
+
+/* For backwards compatibility */
+
 #ifndef ZEXTERN
-#  define ZEXTERN extern
+#  define ZEXTERN Z_EXTERN
 #endif
 #ifndef ZEXPORT
-#  define ZEXPORT
+#  define ZEXPORT Z_EXPORT
 #endif
 #ifndef ZEXPORTVA
-#  define ZEXPORTVA
+#  define ZEXPORTVA Z_EXPORTVA
 #endif
 
 /* Fallback for something that includes us. */
@@ -136,6 +150,18 @@ typedef PTRDIFF_TYPE ptrdiff_t;
 #  ifndef z_off_t
 #    define z_off_t off_t
 #  endif
+#endif
+
+#if defined(_LFS64_LARGEFILE) && _LFS64_LARGEFILE-0
+#  define Z_LFS64
+#endif
+
+#if defined(_LARGEFILE64_SOURCE) && defined(Z_LFS64)
+#  define Z_LARGE64
+#endif
+
+#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS-0 == 64 && defined(Z_LFS64)
+#  define Z_WANT64
 #endif
 
 #if !defined(SEEK_SET)

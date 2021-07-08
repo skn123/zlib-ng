@@ -14,29 +14,23 @@
 #include <inttypes.h>
 #include "deflate.h"
 #include "functable.h"
-#include "crc32_p.h"
-#include "crc32.h"
-
-
-/* Local functions for crc concatenation */
-static uint32_t crc32_combine_(uint32_t crc1, uint32_t crc2, z_off64_t len2);
-static void crc32_combine_gen_(uint32_t *op, z_off64_t len2);
+#include "crc32_tbl.h"
 
 /* =========================================================================
  * This function can be used by asm versions of crc32()
  */
-const uint32_t * ZEXPORT PREFIX(get_crc_table)(void) {
+const uint32_t * Z_EXPORT PREFIX(get_crc_table)(void) {
     return (const uint32_t *)crc_table;
 }
 
 #ifdef ZLIB_COMPAT
-unsigned long ZEXPORT PREFIX(crc32_z)(unsigned long crc, const unsigned char *buf, size_t len) {
+unsigned long Z_EXPORT PREFIX(crc32_z)(unsigned long crc, const unsigned char *buf, size_t len) {
     if (buf == NULL) return 0;
 
     return (unsigned long)functable.crc32((uint32_t)crc, buf, len);
 }
 #else
-uint32_t ZEXPORT PREFIX(crc32_z)(uint32_t crc, const unsigned char *buf, size_t len) {
+uint32_t Z_EXPORT PREFIX(crc32_z)(uint32_t crc, const unsigned char *buf, size_t len) {
     if (buf == NULL) return 0;
 
     return functable.crc32(crc, buf, len);
@@ -48,7 +42,7 @@ uint32_t ZEXPORT PREFIX(crc32_z)(uint32_t crc, const unsigned char *buf, size_t 
 #define DO4 DO1; DO1; DO1; DO1
 
 /* ========================================================================= */
-ZLIB_INTERNAL uint32_t crc32_generic(uint32_t crc, const unsigned char *buf, uint64_t len) {
+Z_INTERNAL uint32_t crc32_generic(uint32_t crc, const unsigned char *buf, uint64_t len) {
     crc = crc ^ 0xffffffff;
 
 #ifdef UNROLL_MORE
@@ -70,11 +64,11 @@ ZLIB_INTERNAL uint32_t crc32_generic(uint32_t crc, const unsigned char *buf, uin
 }
 
 #ifdef ZLIB_COMPAT
-unsigned long ZEXPORT PREFIX(crc32)(unsigned long crc, const unsigned char *buf, unsigned int len) {
+unsigned long Z_EXPORT PREFIX(crc32)(unsigned long crc, const unsigned char *buf, unsigned int len) {
     return (unsigned long)PREFIX(crc32_z)((uint32_t)crc, buf, len);
 }
 #else
-uint32_t ZEXPORT PREFIX(crc32)(uint32_t crc, const unsigned char *buf, uint32_t len) {
+uint32_t Z_EXPORT PREFIX(crc32)(uint32_t crc, const unsigned char *buf, uint32_t len) {
     return PREFIX(crc32_z)(crc, buf, len);
 }
 #endif
@@ -99,9 +93,9 @@ uint32_t ZEXPORT PREFIX(crc32)(uint32_t crc, const unsigned char *buf, uint32_t 
 #define DOLIT32 DOLIT4; DOLIT4; DOLIT4; DOLIT4; DOLIT4; DOLIT4; DOLIT4; DOLIT4
 
 /* ========================================================================= */
-ZLIB_INTERNAL uint32_t crc32_little(uint32_t crc, const unsigned char *buf, uint64_t len) {
-    ZLIB_REGISTER uint32_t c;
-    ZLIB_REGISTER const uint32_t *buf4;
+Z_INTERNAL uint32_t crc32_little(uint32_t crc, const unsigned char *buf, uint64_t len) {
+    Z_REGISTER uint32_t c;
+    Z_REGISTER const uint32_t *buf4;
 
     c = crc;
     c = ~c;
@@ -141,9 +135,9 @@ ZLIB_INTERNAL uint32_t crc32_little(uint32_t crc, const unsigned char *buf, uint
 #define DOBIG32 DOBIG4; DOBIG4; DOBIG4; DOBIG4; DOBIG4; DOBIG4; DOBIG4; DOBIG4
 
 /* ========================================================================= */
-ZLIB_INTERNAL uint32_t crc32_big(uint32_t crc, const unsigned char *buf, uint64_t len) {
-    ZLIB_REGISTER uint32_t c;
-    ZLIB_REGISTER const uint32_t *buf4;
+Z_INTERNAL uint32_t crc32_big(uint32_t crc, const unsigned char *buf, uint64_t len) {
+    Z_REGISTER uint32_t c;
+    Z_REGISTER const uint32_t *buf4;
 
     c = ZSWAP32(crc);
     c = ~c;
@@ -175,122 +169,34 @@ ZLIB_INTERNAL uint32_t crc32_big(uint32_t crc, const unsigned char *buf, uint64_
 }
 #endif /* BYTE_ORDER == BIG_ENDIAN */
 
-
-/* ========================================================================= */
-static uint32_t crc32_combine_(uint32_t crc1, uint32_t crc2, z_off64_t len2) {
-    int n;
-
-    if (len2 > 0)
-        /* operator for 2^n zeros repeats every GF2_DIM n values */
-        for (n = 0; len2; n = (n + 1) % GF2_DIM, len2 >>= 1)
-            if (len2 & 1)
-                crc1 = gf2_matrix_times(crc_comb[n], crc1);
-    return crc1 ^ crc2;
-}
-
-/* ========================================================================= */
-#ifdef ZLIB_COMPAT
-unsigned long ZEXPORT PREFIX(crc32_combine)(unsigned long crc1, unsigned long crc2, z_off_t len2) {
-    return (unsigned long)crc32_combine_((uint32_t)crc1, (uint32_t)crc2, len2);
-}
-
-unsigned long ZEXPORT PREFIX4(crc32_combine)(unsigned long crc1, unsigned long crc2, z_off64_t len2) {
-    return (unsigned long)crc32_combine_((uint32_t)crc1, (uint32_t)crc2, len2);
-}
-#else
-uint32_t ZEXPORT PREFIX4(crc32_combine)(uint32_t crc1, uint32_t crc2, z_off64_t len2) {
-    return crc32_combine_(crc1, crc2, len2);
-}
-#endif
-
 #ifdef X86_PCLMULQDQ_CRC
 #include "arch/x86/x86.h"
 #include "arch/x86/crc_folding.h"
 
-ZLIB_INTERNAL void crc_finalize(deflate_state *const s) {
+Z_INTERNAL void crc_finalize(deflate_state *const s) {
     if (x86_cpu_has_pclmulqdq)
-        s->strm->adler = crc_fold_512to32(s);
+        s->strm->adler = crc_fold_512to32(s->crc0);
 }
 #endif
 
-ZLIB_INTERNAL void crc_reset(deflate_state *const s) {
+Z_INTERNAL void crc_reset(deflate_state *const s) {
 #ifdef X86_PCLMULQDQ_CRC
     x86_check_features();
     if (x86_cpu_has_pclmulqdq) {
-        crc_fold_init(s);
+        s->strm->adler = crc_fold_init(s->crc0);
         return;
     }
 #endif
     s->strm->adler = PREFIX(crc32)(0L, NULL, 0);
 }
 
-ZLIB_INTERNAL void copy_with_crc(PREFIX3(stream) *strm, unsigned char *dst, unsigned long size) {
+Z_INTERNAL void copy_with_crc(PREFIX3(stream) *strm, unsigned char *dst, unsigned long size) {
 #ifdef X86_PCLMULQDQ_CRC
     if (x86_cpu_has_pclmulqdq) {
-        crc_fold_copy(strm->state, dst, strm->next_in, size);
+        crc_fold_copy(strm->state->crc0, dst, strm->next_in, size);
         return;
     }
 #endif
     memcpy(dst, strm->next_in, size);
     strm->adler = PREFIX(crc32)(strm->adler, dst, size);
-}
-
-/* ========================================================================= */
-
-static void crc32_combine_gen_(uint32_t *op, z_off64_t len2) {
-    uint32_t row;
-    int j;
-    unsigned i;
-
-    /* if len2 is zero or negative, return the identity matrix */
-    if (len2 <= 0) {
-        row = 1;
-        for (j = 0; j < GF2_DIM; j++) {
-            op[j] = row;
-            row <<= 1;
-        }
-        return;
-    }
-
-    /* at least one bit in len2 is set -- find it, and copy the operator
-       corresponding to that position into op */
-    i = 0;
-    for (;;) {
-        if (len2 & 1) {
-            for (j = 0; j < GF2_DIM; j++)
-                op[j] = crc_comb[i][j];
-            break;
-        }
-        len2 >>= 1;
-        i = (i + 1) % GF2_DIM;
-    }
-
-    /* for each remaining bit set in len2 (if any), multiply op by the operator
-       corresponding to that position */
-    for (;;) {
-        len2 >>= 1;
-        i = (i + 1) % GF2_DIM;
-        if (len2 == 0)
-            break;
-        if (len2 & 1)
-            for (j = 0; j < GF2_DIM; j++)
-                op[j] = gf2_matrix_times(crc_comb[i], op[j]);
-    }
-}
-
-/* ========================================================================= */
-
-#ifdef ZLIB_COMPAT
-void ZEXPORT PREFIX(crc32_combine_gen)(uint32_t *op, z_off_t len2) {
-    crc32_combine_gen_(op, len2);
-}
-#endif
-
-void ZEXPORT PREFIX4(crc32_combine_gen)(uint32_t *op, z_off64_t len2) {
-    crc32_combine_gen_(op, len2);
-}
-
-/* ========================================================================= */
-uint32_t ZEXPORT PREFIX(crc32_combine_op)(uint32_t crc1, uint32_t crc2, const uint32_t *op) {
-    return gf2_matrix_times(op, crc1) ^ crc2;
 }

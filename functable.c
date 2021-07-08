@@ -5,6 +5,7 @@
 
 #include "zbuild.h"
 #include "zendian.h"
+#include "crc32_p.h"
 #include "deflate.h"
 #include "deflate_p.h"
 
@@ -12,6 +13,14 @@
 
 #ifdef X86_FEATURES
 #  include "fallback_builtins.h"
+#endif
+
+/* update_hash */
+extern uint32_t update_hash_c(deflate_state *const s, uint32_t h, uint32_t val);
+#ifdef X86_SSE42_CRC_HASH
+extern uint32_t update_hash_sse4(deflate_state *const s, uint32_t h, uint32_t val);
+#elif defined(ARM_ACLE_CRC_HASH)
+extern uint32_t update_hash_acle(deflate_state *const s, uint32_t h, uint32_t val);
 #endif
 
 /* insert_string */
@@ -72,6 +81,14 @@ extern uint8_t* chunkunroll_sse2(uint8_t *out, unsigned *dist, unsigned *len);
 extern uint8_t* chunkmemset_sse2(uint8_t *out, unsigned dist, unsigned len);
 extern uint8_t* chunkmemset_safe_sse2(uint8_t *out, unsigned dist, unsigned len, unsigned left);
 #endif
+#ifdef X86_AVX_CHUNKSET
+extern uint32_t chunksize_avx(void);
+extern uint8_t* chunkcopy_avx(uint8_t *out, uint8_t const *from, unsigned len);
+extern uint8_t* chunkcopy_safe_avx(uint8_t *out, uint8_t const *from, unsigned len, uint8_t *safe);
+extern uint8_t* chunkunroll_avx(uint8_t *out, unsigned *dist, unsigned *len);
+extern uint8_t* chunkmemset_avx(uint8_t *out, unsigned dist, unsigned len);
+extern uint8_t* chunkmemset_safe_avx(uint8_t *out, unsigned dist, unsigned len, unsigned left);
+#endif
 #ifdef ARM_NEON_CHUNKSET
 extern uint32_t chunksize_neon(void);
 extern uint8_t* chunkcopy_neon(uint8_t *out, uint8_t const *from, unsigned len);
@@ -80,55 +97,76 @@ extern uint8_t* chunkunroll_neon(uint8_t *out, unsigned *dist, unsigned *len);
 extern uint8_t* chunkmemset_neon(uint8_t *out, unsigned dist, unsigned len);
 extern uint8_t* chunkmemset_safe_neon(uint8_t *out, unsigned dist, unsigned len, unsigned left);
 #endif
+#ifdef POWER8_VSX_CHUNKSET
+extern uint32_t chunksize_power8(void);
+extern uint8_t* chunkcopy_power8(uint8_t *out, uint8_t const *from, unsigned len);
+extern uint8_t* chunkcopy_safe_power8(uint8_t *out, uint8_t const *from, unsigned len, uint8_t *safe);
+extern uint8_t* chunkunroll_power8(uint8_t *out, unsigned *dist, unsigned *len);
+extern uint8_t* chunkmemset_power8(uint8_t *out, unsigned dist, unsigned len);
+extern uint8_t* chunkmemset_safe_power8(uint8_t *out, unsigned dist, unsigned len, unsigned left);
+#endif
 
 /* CRC32 */
-ZLIB_INTERNAL uint32_t crc32_generic(uint32_t, const unsigned char *, uint64_t);
+Z_INTERNAL uint32_t crc32_generic(uint32_t, const unsigned char *, uint64_t);
 
 #ifdef ARM_ACLE_CRC_HASH
 extern uint32_t crc32_acle(uint32_t, const unsigned char *, uint64_t);
 #endif
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-extern uint32_t crc32_little(uint32_t, const unsigned char *, uint64_t);
-#elif BYTE_ORDER == BIG_ENDIAN
-extern uint32_t crc32_big(uint32_t, const unsigned char *, uint64_t);
+#ifdef S390_CRC32_VX
+extern uint32_t s390_crc32_vx(uint32_t, const unsigned char *, uint64_t);
 #endif
 
 /* compare258 */
-extern int32_t compare258_c(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_c(const unsigned char *src0, const unsigned char *src1);
 #ifdef UNALIGNED_OK
-extern int32_t compare258_unaligned_16(const unsigned char *src0, const unsigned char *src1);
-extern int32_t compare258_unaligned_32(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_unaligned_16(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_unaligned_32(const unsigned char *src0, const unsigned char *src1);
 #ifdef UNALIGNED64_OK
-extern int32_t compare258_unaligned_64(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_unaligned_64(const unsigned char *src0, const unsigned char *src1);
 #endif
 #ifdef X86_SSE42_CMP_STR
-extern int32_t compare258_unaligned_sse4(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_unaligned_sse4(const unsigned char *src0, const unsigned char *src1);
 #endif
 #if defined(X86_AVX2) && defined(HAVE_BUILTIN_CTZ)
-extern int32_t compare258_unaligned_avx2(const unsigned char *src0, const unsigned char *src1);
+extern uint32_t compare258_unaligned_avx2(const unsigned char *src0, const unsigned char *src1);
 #endif
 #endif
 
 /* longest_match */
-extern int32_t longest_match_c(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_c(deflate_state *const s, Pos cur_match);
 #ifdef UNALIGNED_OK
-extern int32_t longest_match_unaligned_16(deflate_state *const s, Pos cur_match);
-extern int32_t longest_match_unaligned_32(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_unaligned_16(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_unaligned_32(deflate_state *const s, Pos cur_match);
 #ifdef UNALIGNED64_OK
-extern int32_t longest_match_unaligned_64(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_unaligned_64(deflate_state *const s, Pos cur_match);
 #endif
 #ifdef X86_SSE42_CMP_STR
-extern int32_t longest_match_unaligned_sse4(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_unaligned_sse4(deflate_state *const s, Pos cur_match);
 #endif
 #if defined(X86_AVX2) && defined(HAVE_BUILTIN_CTZ)
-extern int32_t longest_match_unaligned_avx2(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_unaligned_avx2(deflate_state *const s, Pos cur_match);
 #endif
 #endif
 
-ZLIB_INTERNAL __thread struct functable_s functable;
+/* longest_match_slow */
+extern uint32_t longest_match_slow_c(deflate_state *const s, Pos cur_match);
+#ifdef UNALIGNED_OK
+extern uint32_t longest_match_slow_unaligned_16(deflate_state *const s, Pos cur_match);
+extern uint32_t longest_match_slow_unaligned_32(deflate_state *const s, Pos cur_match);
+#ifdef UNALIGNED64_OK
+extern uint32_t longest_match_slow_unaligned_64(deflate_state *const s, Pos cur_match);
+#endif
+#ifdef X86_SSE42_CMP_STR
+extern uint32_t longest_match_slow_unaligned_sse4(deflate_state *const s, Pos cur_match);
+#endif
+#if defined(X86_AVX2) && defined(HAVE_BUILTIN_CTZ)
+extern uint32_t longest_match_slow_unaligned_avx2(deflate_state *const s, Pos cur_match);
+#endif
+#endif
 
-ZLIB_INTERNAL void cpu_check_features(void)
+Z_INTERNAL Z_TLS struct functable_s functable;
+
+Z_INTERNAL void cpu_check_features(void)
 {
     static int features_checked = 0;
     if (features_checked)
@@ -139,12 +177,31 @@ ZLIB_INTERNAL void cpu_check_features(void)
     arm_check_features();
 #elif defined(POWER_FEATURES)
     power_check_features();
+#elif defined(S390_FEATURES)
+    s390_check_features();
 #endif
     features_checked = 1;
 }
 
 /* stub functions */
-ZLIB_INTERNAL void insert_string_stub(deflate_state *const s, const uint32_t str, uint32_t count) {
+Z_INTERNAL uint32_t update_hash_stub(deflate_state *const s, uint32_t h, uint32_t val) {
+    // Initialize default
+
+    functable.update_hash = &update_hash_c;
+    cpu_check_features();
+
+#ifdef X86_SSE42_CRC_HASH
+    if (x86_cpu_has_sse42)
+        functable.update_hash = &update_hash_sse4;
+#elif defined(ARM_ACLE_CRC_HASH)
+    if (arm_cpu_has_crc32)
+        functable.update_hash = &update_hash_acle;
+#endif
+
+    return functable.update_hash(s, h, val);
+}
+
+Z_INTERNAL void insert_string_stub(deflate_state *const s, uint32_t str, uint32_t count) {
     // Initialize default
 
     functable.insert_string = &insert_string_c;
@@ -161,7 +218,7 @@ ZLIB_INTERNAL void insert_string_stub(deflate_state *const s, const uint32_t str
     functable.insert_string(s, str, count);
 }
 
-ZLIB_INTERNAL Pos quick_insert_string_stub(deflate_state *const s, const uint32_t str) {
+Z_INTERNAL Pos quick_insert_string_stub(deflate_state *const s, const uint32_t str) {
     functable.quick_insert_string = &quick_insert_string_c;
 
 #ifdef X86_SSE42_CRC_HASH
@@ -175,7 +232,7 @@ ZLIB_INTERNAL Pos quick_insert_string_stub(deflate_state *const s, const uint32_
     return functable.quick_insert_string(s, str);
 }
 
-ZLIB_INTERNAL void slide_hash_stub(deflate_state *s) {
+Z_INTERNAL void slide_hash_stub(deflate_state *s) {
 
     functable.slide_hash = &slide_hash_c;
     cpu_check_features();
@@ -203,7 +260,7 @@ ZLIB_INTERNAL void slide_hash_stub(deflate_state *s) {
     functable.slide_hash(s);
 }
 
-ZLIB_INTERNAL uint32_t adler32_stub(uint32_t adler, const unsigned char *buf, size_t len) {
+Z_INTERNAL uint32_t adler32_stub(uint32_t adler, const unsigned char *buf, size_t len) {
     // Initialize default
     functable.adler32 = &adler32_c;
     cpu_check_features();
@@ -230,9 +287,10 @@ ZLIB_INTERNAL uint32_t adler32_stub(uint32_t adler, const unsigned char *buf, si
     return functable.adler32(adler, buf, len);
 }
 
-ZLIB_INTERNAL uint32_t chunksize_stub(void) {
+Z_INTERNAL uint32_t chunksize_stub(void) {
     // Initialize default
     functable.chunksize = &chunksize_c;
+    cpu_check_features();
 
 #ifdef X86_SSE2_CHUNKSET
 # if !defined(__x86_64__) && !defined(_M_X64) && !defined(X86_NOCHECK_SSE2)
@@ -240,15 +298,23 @@ ZLIB_INTERNAL uint32_t chunksize_stub(void) {
 # endif
         functable.chunksize = &chunksize_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunksize = &chunksize_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunksize = &chunksize_neon;
+#endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunksize = &chunksize_power8;
 #endif
 
     return functable.chunksize();
 }
 
-ZLIB_INTERNAL uint8_t* chunkcopy_stub(uint8_t *out, uint8_t const *from, unsigned len) {
+Z_INTERNAL uint8_t* chunkcopy_stub(uint8_t *out, uint8_t const *from, unsigned len) {
     // Initialize default
     functable.chunkcopy = &chunkcopy_c;
 
@@ -258,15 +324,23 @@ ZLIB_INTERNAL uint8_t* chunkcopy_stub(uint8_t *out, uint8_t const *from, unsigne
 # endif
         functable.chunkcopy = &chunkcopy_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunkcopy = &chunkcopy_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunkcopy = &chunkcopy_neon;
+#endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunkcopy = &chunkcopy_power8;
 #endif
 
     return functable.chunkcopy(out, from, len);
 }
 
-ZLIB_INTERNAL uint8_t* chunkcopy_safe_stub(uint8_t *out, uint8_t const *from, unsigned len, uint8_t *safe) {
+Z_INTERNAL uint8_t* chunkcopy_safe_stub(uint8_t *out, uint8_t const *from, unsigned len, uint8_t *safe) {
     // Initialize default
     functable.chunkcopy_safe = &chunkcopy_safe_c;
 
@@ -276,15 +350,23 @@ ZLIB_INTERNAL uint8_t* chunkcopy_safe_stub(uint8_t *out, uint8_t const *from, un
 # endif
         functable.chunkcopy_safe = &chunkcopy_safe_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunkcopy_safe = &chunkcopy_safe_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunkcopy_safe = &chunkcopy_safe_neon;
+#endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunkcopy_safe = &chunkcopy_safe_power8;
 #endif
 
     return functable.chunkcopy_safe(out, from, len, safe);
 }
 
-ZLIB_INTERNAL uint8_t* chunkunroll_stub(uint8_t *out, unsigned *dist, unsigned *len) {
+Z_INTERNAL uint8_t* chunkunroll_stub(uint8_t *out, unsigned *dist, unsigned *len) {
     // Initialize default
     functable.chunkunroll = &chunkunroll_c;
 
@@ -294,15 +376,23 @@ ZLIB_INTERNAL uint8_t* chunkunroll_stub(uint8_t *out, unsigned *dist, unsigned *
 # endif
         functable.chunkunroll = &chunkunroll_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunkunroll = &chunkunroll_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunkunroll = &chunkunroll_neon;
+#endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunkunroll = &chunkunroll_power8;
 #endif
 
     return functable.chunkunroll(out, dist, len);
 }
 
-ZLIB_INTERNAL uint8_t* chunkmemset_stub(uint8_t *out, unsigned dist, unsigned len) {
+Z_INTERNAL uint8_t* chunkmemset_stub(uint8_t *out, unsigned dist, unsigned len) {
     // Initialize default
     functable.chunkmemset = &chunkmemset_c;
 
@@ -312,15 +402,24 @@ ZLIB_INTERNAL uint8_t* chunkmemset_stub(uint8_t *out, unsigned dist, unsigned le
 # endif
         functable.chunkmemset = &chunkmemset_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunkmemset = &chunkmemset_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunkmemset = &chunkmemset_neon;
 #endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunkmemset = &chunkmemset_power8;
+#endif
+
 
     return functable.chunkmemset(out, dist, len);
 }
 
-ZLIB_INTERNAL uint8_t* chunkmemset_safe_stub(uint8_t *out, unsigned dist, unsigned len, unsigned left) {
+Z_INTERNAL uint8_t* chunkmemset_safe_stub(uint8_t *out, unsigned dist, unsigned len, unsigned left) {
     // Initialize default
     functable.chunkmemset_safe = &chunkmemset_safe_c;
 
@@ -330,15 +429,24 @@ ZLIB_INTERNAL uint8_t* chunkmemset_safe_stub(uint8_t *out, unsigned dist, unsign
 # endif
         functable.chunkmemset_safe = &chunkmemset_safe_sse2;
 #endif
+#ifdef X86_AVX_CHUNKSET
+    if (x86_cpu_has_avx2)
+        functable.chunkmemset_safe = &chunkmemset_safe_avx;
+#endif
 #ifdef ARM_NEON_CHUNKSET
     if (arm_cpu_has_neon)
         functable.chunkmemset_safe = &chunkmemset_safe_neon;
+#endif
+#ifdef POWER8_VSX_CHUNKSET
+    if (power_cpu_has_arch_2_07)
+        functable.chunkmemset_safe = &chunkmemset_safe_power8;
 #endif
 
     return functable.chunkmemset_safe(out, dist, len, left);
 }
 
-ZLIB_INTERNAL uint32_t crc32_stub(uint32_t crc, const unsigned char *buf, uint64_t len) {
+Z_INTERNAL uint32_t crc32_stub(uint32_t crc, const unsigned char *buf, uint64_t len) {
+    int32_t use_byfour = sizeof(void *) == sizeof(ptrdiff_t);
 
     Assert(sizeof(uint64_t) >= sizeof(size_t),
            "crc32_z takes size_t but internally we have a uint64_t len");
@@ -346,7 +454,7 @@ ZLIB_INTERNAL uint32_t crc32_stub(uint32_t crc, const unsigned char *buf, uint64
 
     cpu_check_features();
 
-    if (sizeof(void *) == sizeof(ptrdiff_t)) {
+    if (use_byfour) {
 #if BYTE_ORDER == LITTLE_ENDIAN
         functable.crc32 = crc32_little;
 #  if defined(ARM_ACLE_CRC_HASH)
@@ -355,6 +463,10 @@ ZLIB_INTERNAL uint32_t crc32_stub(uint32_t crc, const unsigned char *buf, uint64
 #  endif
 #elif BYTE_ORDER == BIG_ENDIAN
         functable.crc32 = crc32_big;
+#  if defined(S390_CRC32_VX)
+        if (s390_cpu_has_vx)
+            functable.crc32 = s390_crc32_vx;
+#  endif
 #else
 #  error No endian defined
 #endif
@@ -365,7 +477,7 @@ ZLIB_INTERNAL uint32_t crc32_stub(uint32_t crc, const unsigned char *buf, uint64
     return functable.crc32(crc, buf, len);
 }
 
-ZLIB_INTERNAL int32_t compare258_stub(const unsigned char *src0, const unsigned char *src1) {
+Z_INTERNAL uint32_t compare258_stub(const unsigned char *src0, const unsigned char *src1) {
 
     functable.compare258 = &compare258_c;
 
@@ -390,7 +502,7 @@ ZLIB_INTERNAL int32_t compare258_stub(const unsigned char *src0, const unsigned 
     return functable.compare258(src0, src1);
 }
 
-ZLIB_INTERNAL int32_t longest_match_stub(deflate_state *const s, Pos cur_match) {
+Z_INTERNAL uint32_t longest_match_stub(deflate_state *const s, Pos cur_match) {
 
     functable.longest_match = &longest_match_c;
 
@@ -415,8 +527,34 @@ ZLIB_INTERNAL int32_t longest_match_stub(deflate_state *const s, Pos cur_match) 
     return functable.longest_match(s, cur_match);
 }
 
+Z_INTERNAL uint32_t longest_match_slow_stub(deflate_state *const s, Pos cur_match) {
+
+    functable.longest_match_slow = &longest_match_slow_c;
+
+#ifdef UNALIGNED_OK
+#  if defined(UNALIGNED64_OK) && defined(HAVE_BUILTIN_CTZLL)
+    functable.longest_match_slow = &longest_match_slow_unaligned_64;
+#  elif defined(HAVE_BUILTIN_CTZ)
+    functable.longest_match_slow = &longest_match_slow_unaligned_32;
+#  else
+    functable.longest_match_slow = &longest_match_slow_unaligned_16;
+#  endif
+#  ifdef X86_SSE42_CMP_STR
+    if (x86_cpu_has_sse42)
+        functable.longest_match_slow = &longest_match_slow_unaligned_sse4;
+#  endif
+#  if defined(X86_AVX2) && defined(HAVE_BUILTIN_CTZ)
+    if (x86_cpu_has_avx2)
+        functable.longest_match_slow = &longest_match_slow_unaligned_avx2;
+#  endif
+#endif
+
+    return functable.longest_match_slow(s, cur_match);
+}
+
 /* functable init */
-ZLIB_INTERNAL __thread struct functable_s functable = {
+Z_INTERNAL Z_TLS struct functable_s functable = {
+    update_hash_stub,
     insert_string_stub,
     quick_insert_string_stub,
     adler32_stub,
@@ -424,6 +562,7 @@ ZLIB_INTERNAL __thread struct functable_s functable = {
     slide_hash_stub,
     compare258_stub,
     longest_match_stub,
+    longest_match_slow_stub,
     chunksize_stub,
     chunkcopy_stub,
     chunkcopy_safe_stub,

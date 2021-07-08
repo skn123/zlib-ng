@@ -11,17 +11,17 @@
  */
 
 #if defined(HAVE_VISIBILITY_INTERNAL)
-#  define ZLIB_INTERNAL __attribute__((visibility ("internal")))
+#  define Z_INTERNAL __attribute__((visibility ("internal")))
 #elif defined(HAVE_VISIBILITY_HIDDEN)
-#  define ZLIB_INTERNAL __attribute__((visibility ("hidden")))
+#  define Z_INTERNAL __attribute__((visibility ("hidden")))
 #else
-#  define ZLIB_INTERNAL
+#  define Z_INTERNAL
 #endif
 
 #ifndef __cplusplus
-#  define ZLIB_REGISTER register
+#  define Z_REGISTER register
 #else
-#  define ZLIB_REGISTER
+#  define Z_REGISTER
 #endif
 
 #include <stddef.h>
@@ -39,7 +39,7 @@ typedef unsigned char uch; /* Included for compatibility with external code only
 typedef uint16_t ush;      /* Included for compatibility with external code only */
 typedef unsigned long ulg;
 
-extern const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
+extern z_const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
 /* (size given to avoid silly warnings with Visual C++) */
 
 #define ERR_MSG(err) PREFIX(z_errmsg)[Z_NEED_DICT-(err)]
@@ -66,9 +66,12 @@ extern const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
 #define DYN_TREES    2
 /* The three kinds of block type */
 
-#define MIN_MATCH  3
-#define MAX_MATCH  258
-/* The minimum and maximum match lengths */
+#define STD_MIN_MATCH  3
+#define STD_MAX_MATCH  258
+/* The minimum and maximum match lengths mandated by the deflate standard */
+
+#define WANT_MIN_MATCH  4
+/* The minimum wanted match length, affects deflate_quick, deflate_fast, deflate_medium and deflate_slow  */
 
 #define PRESET_DICT 0x20 /* preset dictionary flag in zlib header */
 
@@ -96,9 +99,6 @@ extern const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
 
 #ifdef OS2
 #  define OS_CODE  6
-#  if defined(M_I86) && !defined(Z_SOLO)
-#    include <malloc.h>
-#  endif
 #endif
 
 #if defined(MACOS) || defined(TARGET_OS_MAC)
@@ -133,17 +133,13 @@ extern const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
 #  define OS_CODE  3  /* assume Unix */
 #endif
 
-#ifndef F_OPEN
-#  define F_OPEN(name, mode) fopen((name), (mode))
-#endif
-
          /* functions */
 
 /* Diagnostic functions */
 #ifdef ZLIB_DEBUG
 #  include <stdio.h>
-   extern int ZLIB_INTERNAL z_verbose;
-   extern void ZLIB_INTERNAL z_error(char *m);
+   extern int Z_INTERNAL z_verbose;
+   extern void Z_INTERNAL z_error(char *m);
 #  define Assert(cond, msg) {if (!(cond)) z_error(msg);}
 #  define Trace(x) {if (z_verbose >= 0) fprintf x;}
 #  define Tracev(x) {if (z_verbose > 0) fprintf x;}
@@ -159,8 +155,8 @@ extern const char * const PREFIX(z_errmsg)[10]; /* indexed by 2-zlib_error */
 #  define Tracecv(c, x)
 #endif
 
-void ZLIB_INTERNAL *zng_calloc(void *opaque, unsigned items, unsigned size);
-void ZLIB_INTERNAL   zng_cfree(void *opaque, void *ptr);
+void Z_INTERNAL *zng_calloc(void *opaque, unsigned items, unsigned size);
+void Z_INTERNAL   zng_cfree(void *opaque, void *ptr);
 
 #define ZALLOC(strm, items, size) (*((strm)->zalloc))((strm)->opaque, (items), (size))
 #define ZFREE(strm, addr)         (*((strm)->zfree))((strm)->opaque, (void *)(addr))
@@ -186,12 +182,16 @@ void ZLIB_INTERNAL   zng_cfree(void *opaque, void *ptr);
 #  define ZSWAP32(q) bswap_32(q)
 #  define ZSWAP64(q) bswap_64(q)
 
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #  include <sys/endian.h>
 #  define ZSWAP16(q) bswap16(q)
 #  define ZSWAP32(q) bswap32(q)
 #  define ZSWAP64(q) bswap64(q)
-
+#elif defined(__OpenBSD__)
+#  include <sys/endian.h>
+#  define ZSWAP16(q) swap16(q)
+#  define ZSWAP32(q) swap32(q)
+#  define ZSWAP64(q) swap64(q)
 #elif defined(__INTEL_COMPILER)
 /* ICC does not provide a two byte swap. */
 #  define ZSWAP16(q) ((((q) & 0xff) << 8) | (((q) & 0xff00) >> 8))
@@ -203,14 +203,14 @@ void ZLIB_INTERNAL   zng_cfree(void *opaque, void *ptr);
 #  define ZSWAP32(q) ((((q) >> 24) & 0xff) + (((q) >> 8) & 0xff00) + \
                      (((q) & 0xff00) << 8) + (((q) & 0xff) << 24))
 #  define ZSWAP64(q)                           \
-          ((q & 0xFF00000000000000u) >> 56u) | \
+         (((q & 0xFF00000000000000u) >> 56u) | \
           ((q & 0x00FF000000000000u) >> 40u) | \
           ((q & 0x0000FF0000000000u) >> 24u) | \
           ((q & 0x000000FF00000000u) >> 8u)  | \
           ((q & 0x00000000FF000000u) << 8u)  | \
           ((q & 0x0000000000FF0000u) << 24u) | \
           ((q & 0x000000000000FF00u) << 40u) | \
-          ((q & 0x00000000000000FFu) << 56u)
+          ((q & 0x00000000000000FFu) << 56u))
 #endif
 
 /* Only enable likely/unlikely if the compiler is known to support it */
@@ -252,6 +252,8 @@ void ZLIB_INTERNAL   zng_cfree(void *opaque, void *ptr);
 #  include "arch/arm/arm.h"
 #elif defined(POWER_FEATURES)
 #  include "arch/power/power.h"
+#elif defined(S390_FEATURES)
+#  include "arch/s390/s390.h"
 #endif
 
 #endif /* ZUTIL_H_ */

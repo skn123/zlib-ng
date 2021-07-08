@@ -1,4 +1,4 @@
-/* slide_neon.c -- Optimized hash table shifting for ARM with support for NEON instructions
+/* slide_hash_neon.c -- Optimized hash table shifting for ARM with support for NEON instructions
  * Copyright (C) 2017-2020 Mika T. Lindqvist
  *
  * Authors:
@@ -18,15 +18,15 @@
 #include "../../deflate.h"
 
 /* SIMD version of hash_chain rebase */
-static inline void slide_hash_chain(Pos *table, unsigned int entries, uint16_t window_size) {
-    ZLIB_REGISTER uint16x8_t v, *p;
-    ZLIB_REGISTER size_t n;
+static inline void slide_hash_chain(Pos *table, uint32_t entries, uint16_t wsize) {
+    Z_REGISTER uint16x8_t v, *p;
+    Z_REGISTER size_t n;
 
     size_t size = entries*sizeof(table[0]);
     Assert((size % sizeof(uint16x8_t) * 8 == 0), "hash table size err");
 
     Assert(sizeof(Pos) == 2, "Wrong Pos size");
-    v = vdupq_n_u16(window_size);
+    v = vdupq_n_u16(wsize);
 
     p = (uint16x8_t *)table;
     n = size / (sizeof(uint16x8_t) * 8);
@@ -43,10 +43,10 @@ static inline void slide_hash_chain(Pos *table, unsigned int entries, uint16_t w
     } while (--n);
 }
 
-ZLIB_INTERNAL void slide_hash_neon(deflate_state *s) {
+Z_INTERNAL void slide_hash_neon(deflate_state *s) {
     unsigned int wsize = s->w_size;
 
-    slide_hash_chain(s->head, s->hash_size, wsize);
+    slide_hash_chain(s->head, HASH_SIZE, wsize);
     slide_hash_chain(s->prev, wsize, wsize);
 }
 #endif

@@ -14,7 +14,7 @@
 
 #ifdef X86_AVX2_ADLER32
 
-ZLIB_INTERNAL uint32_t adler32_avx2(uint32_t adler, const unsigned char *buf, size_t len) {
+Z_INTERNAL uint32_t adler32_avx2(uint32_t adler, const unsigned char *buf, size_t len) {
     uint32_t sum2;
 
      /* split Adler-32 into component sums */
@@ -102,16 +102,8 @@ ZLIB_INTERNAL uint32_t adler32_avx2(uint32_t adler, const unsigned char *buf, si
        s2[7] = sum2;
     }
 
-    while (len) {
-        len--;
-        adler += *buf++;
-        sum2 += adler;
-    }
-    adler %= BASE;
-    sum2 %= BASE;
-
-    /* return recombined sums */
-    return adler | (sum2 << 16);
+    /* Process tail (len < 16).  */
+    return adler32_len_16(adler, buf, len, sum2);
 }
 
 #endif

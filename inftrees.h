@@ -41,7 +41,7 @@ typedef struct {
 /* Maximum size of the dynamic table.  The maximum number of code structures is
    1444, which is the sum of 852 for literal/length codes and 592 for distance
    codes.  These values were found by exhaustive searches using the program
-   examples/enough.c found in the zlib distribtution.  The arguments to that
+   examples/enough.c found in the zlib distributions.  The arguments to that
    program are the number of symbols, the initial root table size, and the
    maximum bit length of a code.  "enough 286 9 15" for literal/length codes
    returns returns 852, and "enough 30 6 15" for distance codes returns 592.
@@ -60,7 +60,7 @@ typedef enum {
     DISTS
 } codetype;
 
-int ZLIB_INTERNAL zng_inflate_table (codetype type, uint16_t *lens, unsigned codes,
+int Z_INTERNAL zng_inflate_table (codetype type, uint16_t *lens, unsigned codes,
                                   code * *table, unsigned *bits, uint16_t *work);
 
 #endif /* INFTREES_H_ */

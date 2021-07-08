@@ -3,7 +3,7 @@
  * instruction.
  *
  * A white paper describing this algorithm can be found at:
- * http://www.intel.com/content/dam/www/public/us/en/documents/white-papers/fast-crc-computation-generic-polynomials-pclmulqdq-paper.pdf
+ * https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/fast-crc-computation-generic-polynomials-pclmulqdq-paper.pdf
  *
  * Copyright (C) 2013 Intel Corporation. All rights reserved.
  * Authors:
@@ -18,21 +18,20 @@
 
 #ifdef X86_PCLMULQDQ_CRC
 
-#include "../../zbuild.h"
 #include <inttypes.h>
 #include <immintrin.h>
 #include <wmmintrin.h>
 
 #include "crc_folding.h"
 
-ZLIB_INTERNAL void crc_fold_init(deflate_state *const s) {
+Z_INTERNAL uint32_t crc_fold_init(unsigned int crc0[4 * 5]) {
     /* CRC_SAVE */
-    _mm_storeu_si128((__m128i *)s->crc0 + 0, _mm_cvtsi32_si128(0x9db42487));
-    _mm_storeu_si128((__m128i *)s->crc0 + 1, _mm_setzero_si128());
-    _mm_storeu_si128((__m128i *)s->crc0 + 2, _mm_setzero_si128());
-    _mm_storeu_si128((__m128i *)s->crc0 + 3, _mm_setzero_si128());
+    _mm_storeu_si128((__m128i *)crc0 + 0, _mm_cvtsi32_si128(0x9db42487));
+    _mm_storeu_si128((__m128i *)crc0 + 1, _mm_setzero_si128());
+    _mm_storeu_si128((__m128i *)crc0 + 2, _mm_setzero_si128());
+    _mm_storeu_si128((__m128i *)crc0 + 3, _mm_setzero_si128());
 
-    s->strm->adler = 0;
+    return 0;
 }
 
 static void fold_1(__m128i *xmm_crc0, __m128i *xmm_crc1, __m128i *xmm_crc2, __m128i *xmm_crc3) {
@@ -186,7 +185,7 @@ static void partial_fold(const size_t len, __m128i *xmm_crc0, __m128i *xmm_crc1,
 
     const __m128i xmm_fold4 = _mm_set_epi32( 0x00000001, 0x54442bd4,
                                              0x00000001, 0xc6e41596);
-    const __m128i xmm_mask3 = _mm_set1_epi32(0x80808080);
+    const __m128i xmm_mask3 = _mm_set1_epi32((int32_t)0x80808080);
 
     __m128i xmm_shl, xmm_shr, xmm_tmp1, xmm_tmp2, xmm_tmp3;
     __m128i xmm_a0_0, xmm_a0_1;
@@ -227,16 +226,16 @@ static void partial_fold(const size_t len, __m128i *xmm_crc0, __m128i *xmm_crc1,
     *xmm_crc3 = _mm_castps_si128(ps_res);
 }
 
-ZLIB_INTERNAL void crc_fold_copy(deflate_state *const s, unsigned char *dst, const unsigned char *src, long len) {
+Z_INTERNAL void crc_fold_copy(unsigned int crc0[4 * 5], unsigned char *dst, const unsigned char *src, long len) {
     unsigned long algn_diff;
     __m128i xmm_t0, xmm_t1, xmm_t2, xmm_t3;
     char ALIGNED_(16) partial_buf[16] = { 0 };
 
     /* CRC_LOAD */
-    __m128i xmm_crc0 = _mm_loadu_si128((__m128i *)s->crc0 + 0);
-    __m128i xmm_crc1 = _mm_loadu_si128((__m128i *)s->crc0 + 1);
-    __m128i xmm_crc2 = _mm_loadu_si128((__m128i *)s->crc0 + 2);
-    __m128i xmm_crc3 = _mm_loadu_si128((__m128i *)s->crc0 + 3);
+    __m128i xmm_crc0 = _mm_loadu_si128((__m128i *)crc0 + 0);
+    __m128i xmm_crc1 = _mm_loadu_si128((__m128i *)crc0 + 1);
+    __m128i xmm_crc2 = _mm_loadu_si128((__m128i *)crc0 + 2);
+    __m128i xmm_crc3 = _mm_loadu_si128((__m128i *)crc0 + 3);
     __m128i xmm_crc_part;
 
     if (len < 16) {
@@ -249,7 +248,7 @@ ZLIB_INTERNAL void crc_fold_copy(deflate_state *const s, unsigned char *dst, con
         goto partial;
     }
 
-    algn_diff = ((uintptr_t)0 - (uintptr_t)src) & 0xF;
+    algn_diff = ((uintptr_t)16 - ((uintptr_t)src & 0xF)) & 0xF;
     if (algn_diff) {
         xmm_crc_part = _mm_loadu_si128((__m128i *)src);
         _mm_storeu_si128((__m128i *)dst, xmm_crc_part);
@@ -358,14 +357,14 @@ ZLIB_INTERNAL void crc_fold_copy(deflate_state *const s, unsigned char *dst, con
     memcpy(dst, partial_buf, len);
 
 partial:
-    partial_fold(len, &xmm_crc0, &xmm_crc1, &xmm_crc2, &xmm_crc3, &xmm_crc_part);
+    partial_fold((size_t)len, &xmm_crc0, &xmm_crc1, &xmm_crc2, &xmm_crc3, &xmm_crc_part);
 done:
     /* CRC_SAVE */
-    _mm_storeu_si128((__m128i *)s->crc0 + 0, xmm_crc0);
-    _mm_storeu_si128((__m128i *)s->crc0 + 1, xmm_crc1);
-    _mm_storeu_si128((__m128i *)s->crc0 + 2, xmm_crc2);
-    _mm_storeu_si128((__m128i *)s->crc0 + 3, xmm_crc3);
-    _mm_storeu_si128((__m128i *)s->crc0 + 4, xmm_crc_part);
+    _mm_storeu_si128((__m128i *)crc0 + 0, xmm_crc0);
+    _mm_storeu_si128((__m128i *)crc0 + 1, xmm_crc1);
+    _mm_storeu_si128((__m128i *)crc0 + 2, xmm_crc2);
+    _mm_storeu_si128((__m128i *)crc0 + 3, xmm_crc3);
+    _mm_storeu_si128((__m128i *)crc0 + 4, xmm_crc_part);
 }
 
 static const unsigned ALIGNED_(16) crc_k[] = {
@@ -385,7 +384,7 @@ static const unsigned ALIGNED_(16) crc_mask2[4] = {
     0x00000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
 };
 
-uint32_t ZLIB_INTERNAL crc_fold_512to32(deflate_state *const s) {
+uint32_t Z_INTERNAL crc_fold_512to32(unsigned int crc0[4 * 5]) {
     const __m128i xmm_mask  = _mm_load_si128((__m128i *)crc_mask);
     const __m128i xmm_mask2 = _mm_load_si128((__m128i *)crc_mask2);
 
@@ -393,10 +392,10 @@ uint32_t ZLIB_INTERNAL crc_fold_512to32(deflate_state *const s) {
     __m128i x_tmp0, x_tmp1, x_tmp2, crc_fold;
 
     /* CRC_LOAD */
-    __m128i xmm_crc0 = _mm_loadu_si128((__m128i *)s->crc0 + 0);
-    __m128i xmm_crc1 = _mm_loadu_si128((__m128i *)s->crc0 + 1);
-    __m128i xmm_crc2 = _mm_loadu_si128((__m128i *)s->crc0 + 2);
-    __m128i xmm_crc3 = _mm_loadu_si128((__m128i *)s->crc0 + 3);
+    __m128i xmm_crc0 = _mm_loadu_si128((__m128i *)crc0 + 0);
+    __m128i xmm_crc1 = _mm_loadu_si128((__m128i *)crc0 + 1);
+    __m128i xmm_crc2 = _mm_loadu_si128((__m128i *)crc0 + 2);
+    __m128i xmm_crc3 = _mm_loadu_si128((__m128i *)crc0 + 3);
 
     /*
      * k1
@@ -450,9 +449,8 @@ uint32_t ZLIB_INTERNAL crc_fold_512to32(deflate_state *const s) {
     xmm_crc3 = _mm_xor_si128(xmm_crc3, xmm_crc2);
     xmm_crc3 = _mm_xor_si128(xmm_crc3, xmm_crc1);
 
-    crc = _mm_extract_epi32(xmm_crc3, 2);
+    crc = (uint32_t)_mm_extract_epi32(xmm_crc3, 2);
     return ~crc;
 }
 
 #endif
-

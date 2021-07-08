@@ -3,6 +3,9 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
+#define _POSIX_SOURCE 1  /* This file needs POSIX for fileno(). */
+#define _POSIX_C_SOURCE 200112  /* For snprintf(). */
+
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -78,7 +81,7 @@ void deflate_params(FILE *fin, FILE *fout, int32_t read_buf_size, int32_t write_
         if (read <= 0)
             break;
 
-        c_stream.next_in  = (const uint8_t *)read_buf;
+        c_stream.next_in  = (z_const uint8_t *)read_buf;
         c_stream.next_out = write_buf;
         c_stream.avail_in = read;
 
@@ -163,7 +166,7 @@ void inflate_params(FILE *fin, FILE *fout, int32_t read_buf_size, int32_t write_
         if (read <= 0)
             break;
 
-        d_stream.next_in  = (const uint8_t *)read_buf;
+        d_stream.next_in  = (z_const uint8_t *)read_buf;
         d_stream.next_out = write_buf;
         d_stream.avail_in = read;
 

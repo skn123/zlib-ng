@@ -28,24 +28,25 @@ extern const ct_data static_dtree[D_CODES];
 
 #define QUICK_START_BLOCK(s, last) { \
     zng_tr_emit_tree(s, STATIC_TREES, last); \
-    s->block_open = 1 + last; \
-    s->block_start = s->strstart; \
+    s->block_open = 1 + (int)last; \
+    s->block_start = (int)s->strstart; \
 }
 
 #define QUICK_END_BLOCK(s, last) { \
     if (s->block_open) { \
         zng_tr_emit_end_block(s, static_ltree, last); \
         s->block_open = 0; \
-        s->block_start = s->strstart; \
+        s->block_start = (int)s->strstart; \
         flush_pending(s->strm); \
         if (s->strm->avail_out == 0) \
             return (last) ? finish_started : need_more; \
     } \
-} 
+}
 
-ZLIB_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
+Z_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
     Pos hash_head;
-    unsigned dist, match_len, last;
+    int64_t dist;
+    unsigned match_len, last;
 
 
     last = (flush == Z_FINISH) ? 1 : 0;
@@ -64,7 +65,7 @@ ZLIB_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
         if (UNLIKELY(s->pending + ((BIT_BUF_SIZE + 7) >> 3) >= s->pending_buf_size)) {
             flush_pending(s->strm);
             if (s->strm->avail_out == 0) {
-                return (last && s->strm->avail_in == 0) ? finish_started : need_more;
+                return (last && s->strm->avail_in == 0 && s->bi_valid == 0 && s->block_open == 0) ? finish_started : need_more;
             }
         }
 
@@ -83,20 +84,20 @@ ZLIB_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
             }
         }
 
-        if (LIKELY(s->lookahead >= MIN_MATCH)) {
+        if (LIKELY(s->lookahead >= WANT_MIN_MATCH)) {
             hash_head = functable.quick_insert_string(s, s->strstart);
-            dist = s->strstart - hash_head;
+            dist = (int64_t)s->strstart - hash_head;
 
-            if (dist > 0 && dist < MAX_DIST(s)) {
+            if (dist <= MAX_DIST(s) && dist > 0) {
                 match_len = functable.compare258(s->window + s->strstart, s->window + hash_head);
 
-                if (match_len >= MIN_MATCH) {
+                if (match_len >= WANT_MIN_MATCH) {
                     if (UNLIKELY(match_len > s->lookahead))
                         match_len = s->lookahead;
 
                     check_match(s, s->strstart, hash_head, match_len);
 
-                    zng_tr_emit_dist(s, static_ltree, static_dtree, match_len - MIN_MATCH, dist);
+                    zng_tr_emit_dist(s, static_ltree, static_dtree, match_len - STD_MIN_MATCH, (uint32_t)dist);
                     s->lookahead -= match_len;
                     s->strstart += match_len;
                     continue;
@@ -109,7 +110,7 @@ ZLIB_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
         s->lookahead--;
     }
 
-    s->insert = s->strstart < MIN_MATCH-1 ? s->strstart : MIN_MATCH-1;
+    s->insert = s->strstart < (STD_MIN_MATCH - 1) ? s->strstart : (STD_MIN_MATCH - 1);
     if (UNLIKELY(last)) {
         QUICK_END_BLOCK(s, 1);
         return finish_done;
